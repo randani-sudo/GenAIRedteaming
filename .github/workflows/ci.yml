@@ -111,7 +111,7 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/randani-sudo/genaiRedteaming:latest
-            ghcr.io/randani-sudo/genaiRedteaming:${{ github.sha }}
+            ghcr.io/randani-sudo/genai-redteaming:latest
+            ghcr.io/randani-sudo/genai-redteaming:${{ github.sha }}
           cache-from: type=gha
           cache-to:   type=gha,mode=max
