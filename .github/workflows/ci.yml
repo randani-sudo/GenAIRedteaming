@@ -16,15 +16,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
+
       - name: Install deps
         run: |
           pip install --upgrade pip
-          pip install numpy pandas scikit-learn xgboost joblib
+          pip install -r requirements.txt
           pip install flake8 pytest pytest-cov
+
       - name: Lint
         run: |
           flake8 . \
@@ -32,6 +35,7 @@ jobs:
             --exclude=venv,venv_user,models,__pycache__,.git \
             --count --statistics
         continue-on-error: true
+
       - name: Unit tests
         run: pytest tests/ -v
         env:
@@ -43,16 +47,17 @@ jobs:
     needs: test
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
+
       - name: Install deps
         run: |
           pip install --upgrade pip
-          pip install numpy pandas scikit-learn xgboost joblib imbalanced-learn
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install transformers sentencepiece
+          pip install -r requirements.txt
+
       - name: Create smoke dataset
         run: |
           python3 -c "
@@ -69,6 +74,7 @@ jobs:
               for r in rows: f.write(json.dumps(r) + '\n')
           print('Smoke dataset: {} rows'.format(len(rows)))
           "
+
       - name: Smoke train
         run: |
           python3 train.py \
@@ -86,14 +92,17 @@ jobs:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
       - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build and push
         uses: docker/build-push-action@v5
         with:

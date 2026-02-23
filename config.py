@@ -1,7 +1,10 @@
 """Configuration for the ML service."""
 import os
 from pathlib import Path
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*a, **kw): pass
 
 load_dotenv()
 
