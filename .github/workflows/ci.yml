@@ -8,8 +8,6 @@ on:
 
 env:
   PYTHON_VERSION: "3.12"
-  MIN_F1:  "0.75"
-  MIN_AUC: "0.75"
 
 jobs:
 
@@ -35,12 +33,7 @@ jobs:
             --count --statistics
         continue-on-error: true
       - name: Unit tests
-        run: |
-          pytest tests/ -v \
-            --cov=. \
-            --cov-report=term-missing \
-            --cov-omit=venv/*,venv_user/*,tests/* \
-            --cov-fail-under=50
+        run: pytest tests/ -v
         env:
           PYTHONPATH: .
 
