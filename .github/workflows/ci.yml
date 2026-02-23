@@ -88,10 +88,15 @@ jobs:
         timeout-minutes: 20
 
   docker:
-    name: "③ Build Docker Image"
+    name: "③ Build & Push Docker Image"
     runs-on: ubuntu-latest
     needs: smoke
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # ← Required for GHCR push
+    permissions:
+      contents: read
+      packages: write
+
     steps:
       - uses: actions/checkout@v4
 
