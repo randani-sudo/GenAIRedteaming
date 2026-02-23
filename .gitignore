@@ -26,3 +26,5 @@ data/*.json
 *.log
 metrics_*.json
 nohup.out
+*.pt
+*.joblib
