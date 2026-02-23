@@ -4,8 +4,9 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset, DataLoader
 from pathlib import Path
-from transformers import AutoTokenizer, AutoModel
+from transformers import AutoTokenizer, BertModel, BertConfig
 import config
+
 
 class ResponseDataset(Dataset):
     def __init__(self, texts: list, labels: np.ndarray, tokenizer, max_length: int):
@@ -31,11 +32,29 @@ class ResponseDataset(Dataset):
             "labels": torch.tensor(self.labels[i], dtype=torch.long),
         }
 
+
 class BERTClassifier(nn.Module):
-    def __init__(self, bert_name: str = None, num_labels: int = 2, dropout: float = 0.1):
+    def __init__(self, bert_name: str = None, num_labels: int = 2,
+                 dropout: float = 0.1, use_pretrained: bool = False):
         super().__init__()
-        bert_name = bert_name or config.BERT_MODEL
-        self.bert = AutoModel.from_pretrained(bert_name)
+
+        if isinstance(bert_name, str) and bert_name and Path(bert_name).is_dir():
+            # LOAD path: read config.json only, weights come from load_state_dict
+            bert_cfg = BertConfig.from_pretrained(bert_name, local_files_only=True)
+            self.bert = BertModel(bert_cfg)
+        elif use_pretrained:
+            # TRAIN path: start from real bert-base-uncased pretrained weights
+            self.bert = BertModel.from_pretrained(
+                getattr(config, "BERT_MODEL", "bert-base-uncased")
+            )
+        else:
+            # Fallback: config only from base model
+            bert_cfg = BertConfig.from_pretrained(
+                getattr(config, "BERT_MODEL", "bert-base-uncased"),
+                local_files_only=True,
+            )
+            self.bert = BertModel(bert_cfg)
+
         self.dropout = nn.Dropout(dropout)
         self.classifier = nn.Linear(self.bert.config.hidden_size, num_labels)
 
@@ -44,6 +63,7 @@ class BERTClassifier(nn.Module):
         pooled = out.last_hidden_state[:, 0, :]
         x = self.dropout(pooled)
         return self.classifier(x)
+
 
 def train_bert(
     train_texts: list,
@@ -58,22 +78,27 @@ def train_bert(
     max_length = max_length or config.MAX_SEQ_LENGTH
     tokenizer = AutoTokenizer.from_pretrained(config.BERT_MODEL)
     train_ds = ResponseDataset(train_texts, train_labels, tokenizer, max_length)
-    val_ds = ResponseDataset(val_texts, val_labels, tokenizer, max_length)
+    val_ds   = ResponseDataset(val_texts,   val_labels,   tokenizer, max_length)
     device = torch.device("cuda" if (getattr(config, "USE_GPU", True) and torch.cuda.is_available()) else "cpu")
-    # num_workers=0 to avoid DataLoader hang on some Linux/DGX setups; pin_memory helps GPU transfer
+
     train_loader = DataLoader(
         train_ds, batch_size=batch_size, shuffle=True,
-        num_workers=0,
-        pin_memory=(device.type == "cuda"),
+        num_workers=0, pin_memory=(device.type == "cuda"),
     )
     val_loader = DataLoader(
         val_ds, batch_size=batch_size,
-        num_workers=0,
-        pin_memory=(device.type == "cuda"),
+        num_workers=0, pin_memory=(device.type == "cuda"),
     )
-    model = BERTClassifier().to(device)
+
+    # use_pretrained=True loads real bert-base-uncased weights as starting point
+    model = BERTClassifier(use_pretrained=True).to(device)
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
-    criterion = nn.CrossEntropyLoss()
+
+    # Class-weighted loss to handle imbalanced datasets
+    from sklearn.utils.class_weight import compute_class_weight
+    weights = compute_class_weight("balanced", classes=np.unique(train_labels), y=train_labels)
+    criterion = nn.CrossEntropyLoss(weight=torch.tensor(weights, dtype=torch.float).to(device))
+
     for epoch in range(epochs):
         model.train()
         for batch in train_loader:
@@ -85,6 +110,7 @@ def train_bert(
             loss = criterion(logits, batch["labels"].to(device))
             loss.backward()
             opt.step()
+
         model.eval()
         val_loss = 0.0
         preds, truths = [], []
@@ -97,11 +123,14 @@ def train_bert(
                 val_loss += criterion(logits, batch["labels"].to(device)).item()
                 preds.extend(logits.argmax(1).cpu().numpy())
                 truths.extend(batch["labels"].numpy())
+
         from sklearn.metrics import f1_score
         f1 = f1_score(truths, preds, zero_division=0)
         print(f"BERT Epoch {epoch+1}/{epochs} val_loss={val_loss/len(val_loader):.4f} val_f1={f1:.4f}")
+
     print("BERT training done.")
-    return model, tokenizer  # (BERTClassifier, PreTrainedTokenizer)
+    return model, tokenizer
+
 
 def predict_bert(model, tokenizer, texts: list, batch_size: int = 32, device=None):
     if device is None:
@@ -109,7 +138,7 @@ def predict_bert(model, tokenizer, texts: list, batch_size: int = 32, device=Non
     model.eval()
     all_probs = []
     for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
+        batch = texts[i: i + batch_size]
         enc = tokenizer(
             batch,
             padding=True,
@@ -119,9 +148,10 @@ def predict_bert(model, tokenizer, texts: list, batch_size: int = 32, device=Non
         )
         with torch.no_grad():
             logits = model(enc["input_ids"].to(device), enc["attention_mask"].to(device))
-            probs = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()
+            probs  = torch.softmax(logits, dim=1)[:, 1].cpu().numpy()
         all_probs.append(probs)
     return np.concatenate(all_probs) if all_probs else np.array([])
+
 
 def save_bert(model, tokenizer, path: Path) -> None:
     path = Path(path)
@@ -129,12 +159,13 @@ def save_bert(model, tokenizer, path: Path) -> None:
     torch.save(model.state_dict(), path / "bert_classifier.pt")
     tokenizer.save_pretrained(path)
 
+
 def load_bert(path: Path, device=None) -> tuple:
     path = Path(path)
     if device is None:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     tokenizer = AutoTokenizer.from_pretrained(str(path))
-    model = BERTClassifier()
+    model = BERTClassifier(bert_name=str(path))
     model.load_state_dict(torch.load(path / "bert_classifier.pt", map_location=device))
     model.to(device)
     return model, tokenizer

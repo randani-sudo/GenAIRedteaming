@@ -42,14 +42,15 @@ def predict(
     n = min(len(prompts), len(responses))
     prompts, responses = prompts[:n], responses[:n]
     df = __import__("pandas").DataFrame({"prompt": prompts, "response": responses})
-    X_tab = build_tabular_features(df)
+    _result = build_tabular_features(df)
+    X_tab = _result[0] if isinstance(_result, tuple) else _result
     toxicity_scores = [float(toxicity_proxy(r)) for r in responses]
 
     out = []
     if model_id == "ensemble":
         enc = get_ensemble()
         if enc is not None:
-            probs = enc.predict_proba(X_tab, responses)
+            probs = enc.predict_proba(X_tab, prompts)
             for i in range(n):
                 out.append({
                     "label": "vulnerable" if probs[i] >= 0.5 else "safe",
