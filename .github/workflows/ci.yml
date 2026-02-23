@@ -27,6 +27,7 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install flake8 pytest pytest-cov
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Lint
         run: |
@@ -57,6 +58,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Create smoke dataset
         run: |
@@ -109,7 +111,7 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ghcr.io/randani-sudo/genaiRedteaming:latest
+            ghcr.io/randani-sudo/genaiRedteaming:${{ github.sha }}
           cache-from: type=gha
           cache-to:   type=gha,mode=max
