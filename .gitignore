@@ -1,0 +1,28 @@
+# Python
+venv/
+venv_user/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+*.egg
+
+# Model weights (large — tracked via Git LFS or CI artifacts)
+models/ensemble/bert/bert_classifier.pt
+models/ensemble/ensemble_meta.joblib
+
+# Data files
+data/*.jsonl
+data/*.csv
+data/*.json
+!data/.gitkeep
+
+# Env
+.env
+*.env
+
+# Logs
+*.log
+metrics_*.json
+nohup.out
